@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kumi · an AI agent in your DAW</title>
+<meta name="description" content="A free, open-source AI agent that works inside Ableton Live, REAPER and Renoise. Ask for the sound in your head, a mix like a track you love, or the patch from a tutorial: Kumi builds it in your project and listens until it’s right.">
+<meta name="theme-color" content="#05060d">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Kumi · an AI agent in your DAW">
+<meta property="og:description" content="A free, open-source AI agent that works inside Ableton Live, REAPER and Renoise. Ask for the sound in your head, a mix like a track you love, or the patch from a tutorial: Kumi builds it in your project and listens until it’s right.">
+<meta property="og:image" content="https://kumi-agent.com/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://kumi-agent.com/">
+<meta property="og:url" content="https://kumi-agent.com/">
+<link rel="stylesheet" href="assets/shell.css">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #05060d; }
+  body { overflow: hidden; }
+  #cloud { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .ks-demos, .ks-now { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="cloud" aria-hidden="true"></canvas>
+<script src="assets/kumi.js"></script>
+<script src="assets/shell.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const K = window.KUMI, RM = K.reducedMotion();
+const LAYOUT = 'bottom';
+THREE.ColorManagement.enabled = false;  // hex colours and video values pass straight to the screen
+
+// Two sources: a quiet looping demo for the idle cloud, and the shell's video when a demo is picked.
+function hide(v) { v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none'; document.body.appendChild(v); return v; }
+const ambient = hide(K.video({ src: new URL('media/cloud-ableton.mp4', location.href).href }, { autoplay: !RM, preload: 'auto', poster: false }));
+ambient.playbackRate = 1;
+ambient.addEventListener('play', () => { ambient.playbackRate = 1; });
+// The stretches of the ambient demo to stay within (its typed prompt and end screen are nearly black), or null.
+const SKIP = null;
+function stayLit() {
+  if (!SKIP || ambient.readyState < 1 || ambient.seeking) return;
+  const ct = ambient.currentTime;
+  if (SKIP.some((s) => ct >= s[0] && ct < s[1])) return;
+  ambient.currentTime = (SKIP.find((s) => s[0] > ct) || SKIP[0])[0];
+}
+ambient.addEventListener('loadedmetadata', stayLit);
+const hooks = { daw() {} };
+const shell = KumiShell.mount({
+  layout: LAYOUT, theme: 'dark', font: 'mona', mono: 'geist-mono',
+  colors: { accent: '#9fe3ff' }, stage: 'self',
+  daws: 'marks', dawsAt: 'kicker', dawColor: 'dim', dawSize: 18, line: 1, demoStyle: 'squares', headStyle: 'one', head: 15,
+  onDaw: (i, daw) => hooks.daw(i, daw),
+  onDemo: (i, d, video) => { if (!video.parentNode) hide(video); want = 1; ambient.pause(); },
+  onRelease: () => { want = 0; if (!RM) ambient.play().catch(() => {}); }
+});
+const texA = new THREE.VideoTexture(ambient), texB = new THREE.VideoTexture(shell.video);
+[texA, texB].forEach((t) => { t.colorSpace = THREE.NoColorSpace; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; });
+
+const cv = document.getElementById('cloud');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, alpha: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+renderer.setClearColor(0x05060d, 1);
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(34, 1, 0.05, 60);
+
+const NX = 640, NY = 360, LAYERS = 1, N = NX * NY * LAYERS;
+const uvp = new Float32Array(N * 2), rnd = new Float32Array(N), lay = new Float32Array(N);
+for (let L = 0, k = 0; L < LAYERS; L++) for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++, k++) {
+  uvp[k * 2] = (i + Math.random()) / NX; uvp[k * 2 + 1] = (j + Math.random()) / NY; rnd[k] = Math.random(); lay[k] = L;
+}
+const geo = new THREE.BufferGeometry();
+geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+geo.setAttribute('uvp', new THREE.BufferAttribute(uvp, 2));
+geo.setAttribute('rnd', new THREE.BufferAttribute(rnd, 1));
+geo.setAttribute('layer', new THREE.BufferAttribute(lay, 1));
+geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 20);
+
+const U = {
+  uA: { value: texA }, uB: { value: texB }, uMix: { value: 0 }, uFlat: { value: 0 },
+  uAspect: { value: 16 / 9 }, uDepth: { value: 1.25 }, uScan: { value: -1 }, uFocus: { value: 3 }, uAperture: { value: 2.2 }, uBokeh: { value: 0 }, uMaxPt: { value: 64 }, uView: { value: 900 }, uT: { value: 0 }, uCell: { value: 2 }
+};
+const PRELUDE = `
+  attribute vec2 uvp; attribute float rnd; attribute float layer;
+  uniform sampler2D uA, uB; uniform float uMix, uFlat, uAspect, uDepth, uScan, uFocus, uView, uT, uCell;
+  uniform float uAperture, uBokeh, uMaxPt;
+  uniform sampler2D uA2; uniform float uSrc;
+  float srcW = 0.0;   // how far this point has turned into the other source video
+  uniform vec4 uClear; uniform vec4 uClear2; uniform float uClearAmt; uniform float uFeather; uniform vec2 uVPx;
+  vec3 src(vec2 uv) { return mix(mix(texture2D(uA, uv).rgb, texture2D(uA2, uv).rgb, srcW), texture2D(uB, uv).rgb, uMix); }
+  float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+  float boxDist(vec4 b, vec2 p) {
+    float dx = max(b.x - p.x, p.x - b.z), dy = max(b.y - p.y, p.y - b.w);
+    return length(max(vec2(dx, dy), 0.0)) + min(max(dx, dy), 0.0);
+  }
+  // Near the words (and the demo list) points thin out: fewer of them, not dimmer ones,
+  // so faint additive points never round to odd colours.
+  float clearKeep(vec4 clip) {
+    if (uClearAmt <= 0.0) return 1.0;
+    vec2 px = (clip.xy / clip.w * 0.5 + 0.5) * uVPx;
+    float m = min(smoothstep(0.0, uFeather, boxDist(uClear, px)), smoothstep(0.0, uFeather * 1.6, boxDist(uClear2, px)));
+    return step(fract(rnd * 61.7 + 0.37), mix(1.0, m, uClearAmt));
+  }
+`;
+const FPRELUDE = ``;
+U.uClear = { value: new THREE.Vector4(-9, -9, -8, -8) }; U.uClear2 = { value: new THREE.Vector4(-9, -9, -8, -8) }; U.uClearAmt = { value: 0 }; U.uFeather = { value: 60 }; U.uVPx = { value: new THREE.Vector2(1, 1) };
+const mat = new THREE.ShaderMaterial({
+  uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: PRELUDE + `
+    varying vec3 vCol; varying float vA; varying float vTone; varying float vCoc;
+    void main() {
+      // During a blend between source videos, patches of the cloud change over first.
+      float sn = 0.5 + 0.25 * sin(uvp.x * 9.0 + uvp.y * 4.0) + 0.25 * sin(uvp.y * 11.0 - uvp.x * 6.0);
+      srcW = smoothstep(0.0, 1.0, clamp(uSrc * 1.5 - sn * 0.5, 0.0, 1.0));
+      vec3 c = src(uvp);
+      float l = luma(c), chroma = length(c - vec3(l));
+      // Density follows brightness (black is empty space); flat, every sample fills the picture.
+      float dens = max(pow(smoothstep(0.06, 0.75, l), 0.8), smoothstep(0.12, 0.3, chroma) * 0.9);
+      float keep = mix(step(rnd, dens), 1.0, uFlat);
+      vec3 p = vec3((uvp.x - 0.5) * uAspect, uvp.y - 0.5, (pow(l, 1.2) * uDepth - 0.25) * (1.0 - uFlat));
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_Position = projectionMatrix * mv;
+      keep *= clearKeep(gl_Position);
+      float dist = -mv.z;
+      float coc = abs(dist - uFocus) * uAperture * (1.0 - uFlat);
+      // With the lens wide open, far-out-of-focus points thin out (fewer of them, each brighter) rather than all
+      // growing dimmer, which keeps big soft discs cheap to draw and their colours true.
+      float thin = mix(1.0, 1.0 / (1.0 + coc * coc * 1.5), uBokeh);
+      keep *= step(fract(sin(dot(uvp, vec2(12.9898, 78.233))) * 43758.5453), thin);
+      float idleSize = min((1.1 + 2.1 * l + coc * 4.5) * (uView / 1000.0) * (3.0 / dist), uMaxPt);
+      gl_PointSize = mix(idleSize, uCell, uFlat) * keep;
+      vA = keep / (1.0 + coc * coc * 6.0) / max(thin, 0.001);
+      vCoc = coc;
+      vCol = c; vTone = smoothstep(0.1, 0.7, l);
+    }`,
+  fragmentShader: FPRELUDE + `
+    uniform float uFlat, uBokeh;
+    varying vec3 vCol; varying float vA; varying float vTone; varying float vCoc;
+    void main() {
+      vec2 q = gl_PointCoord - 0.5;
+      float d = length(q);
+      float soft = smoothstep(0.5, 0.15, d);
+      float disc = smoothstep(0.5, 0.44, d) * (0.55 + 0.45 * smoothstep(0.18, 0.46, d));
+      float shape = mix(soft, disc, uBokeh * smoothstep(0.5, 2.0, vCoc));
+      float a = mix(shape, 1.0 - step(0.5, max(abs(q.x), abs(q.y))), uFlat) * vA;
+      if (a <= 0.001) discard;
+      float l = dot(vCol, vec3(0.299, 0.587, 0.114));
+      vec3 c = clamp(mix(vec3(l), vCol, 1.6), 0.0, 1.0);
+      vec3 glow = mix(c * 0.7 + 0.06, vec3(1.0, 0.98, 0.95), smoothstep(0.55, 1.0, l) * 0.6) * (0.7 + 1.5 * vTone);
+      gl_FragColor = vec4(mix(glow, vCol, uFlat), a * mix(0.85, 0.55, uFlat));
+    }`
+});
+const cloud = new THREE.Points(geo, mat);
+scene.add(cloud);
+
+// When the picture has formed, the picture itself takes over, crisp.
+const screenMat = new THREE.MeshBasicMaterial({ map: texB, transparent: true, opacity: 0, depthWrite: false });
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), screenMat);
+screen.renderOrder = 2;
+scene.add(screen);
+
+// The view is the page's own: it can't be dragged. It opens at a random angle and, at random moments, glides to
+// another random one (never too close to the last), at a random pace.
+const GLIDE = { az: [-1.1, 1.1], el: [-0.06, 0.5] };
+const pick = (r) => r[0] + Math.random() * (r[1] - r[0]);
+let az = pick(GLIDE.az), el = pick(GLIDE.el), tAz = az, tEl = el, idle = 9, dragging = null;
+let gFrom = [az, el], gTo = [az, el], gT = 1, gDur = 3, nextGlide = 2 + Math.random() * 6;
+
+const mobile = () => innerWidth <= 820;
+// Glow: only the brightest points bleed a little light. It fades out while a demo plays, so the video stays clean.
+// The passes render in half-float, so faint additive points also stay true to colour.
+const BLOOM = (() => { const q = new URLSearchParams(location.search); return { strength: +(q.get('glow') || 0.32), radius: +(q.get('glowr') || 0.45), threshold: +(q.get('glowt') || 0.62) }; })();
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
+composer.addPass(bloom);
+function size() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h);
+  U.uView.value = h * renderer.getPixelRatio();
+  camera.aspect = w / Math.max(1, h);
+  camera.fov = camera.aspect < 1 ? 50 : 34;
+}
+addEventListener('resize', size); size();
+
+// The shell's boxes, for fitting the cloud into the free space.
+const heroEl = shell.root.querySelector('.ks-hero'), listEl = shell.root.querySelector('.ks-demos');
+// Centre the cloud on (cx, cy) with its width about fw px.
+function fit(cx, cy, fw) {
+  const w = innerWidth, h = innerHeight, tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const aspect = U.uAspect.value || 16 / 9;
+  return { x: w / 2 - cx, y: h / 2 - cy, dist: aspect * h / (2 * tan * Math.max(80, fw)) };
+}
+// Where the cloud sits while idle, and where the picture lands when flat (css px offsets of the view).
+// The words' real extent (the hero box is wider than its text).
+function textBox() {
+  const r = document.createRange(), boxes = [];
+  ['.ks-h1', '.ks-sub'].forEach((sel) => { const e = heroEl.querySelector(sel); if (e) { r.selectNodeContents(e); boxes.push(r.getBoundingClientRect()); } });
+  const ins = heroEl.querySelector('.ks-install'); if (ins) boxes.push(ins.getBoundingClientRect());
+  const dw = heroEl.querySelector('.ks-daws'); if (dw) { const b = dw.getBoundingClientRect(); if (b.width) boxes.push(b); }
+  return { left: Math.min(...boxes.map((b) => b.left)), right: Math.max(...boxes.map((b) => b.right)), top: Math.min(...boxes.map((b) => b.top)), bottom: Math.max(...boxes.map((b) => b.bottom)) };
+}
+function idleView() {
+  const H = heroEl.getBoundingClientRect(), L = listEl.getBoundingClientRect(), T = textBox();
+  const w = innerWidth, h = innerHeight;
+  if (mobile()) return { x: 0, y: h * 0.3, dist: 4.4 };
+  return fit(w * 0.5, (70 + T.top - 20) / 2, Math.min(w * 0.6, (T.top - 110) * (U.uAspect.value || 1.78) * 1.05));
+}
+// The picture fits the free space: below the header and above the demo squares, which stay while a demo plays
+// (so another can be picked). When that space is too short, the squares step back with the words and the picture
+// takes the height down to the playing bar.
+const topBar = shell.root.querySelector('.ks-top');
+function squares() { const e = shell.root.querySelector('.ks-hero > .ks-demos'); return e && e.getClientRects().length ? e : null; }
+function flatView(aspect) {
+  const w = innerWidth, h = innerHeight;
+  const top = topBar.getBoundingClientRect().bottom + 14;
+  const sq = squares(), roomy = sq && sq.getBoundingClientRect().top - 18 - top >= 260;
+  shell.root.classList.toggle('ks-sq-hide', !!sq && !roomy);
+  const bottom = roomy ? sq.getBoundingClientRect().top - 18 : h - 64;
+  const availH = Math.max(80, bottom - top);
+  const fw = Math.min(w * (mobile() ? 0.94 : 0.84), availH * aspect, mobile() ? w : w * 0.66), fh = fw / aspect;
+  const c = [w / 2, top + availH / 2];
+  const dist = h / (fh * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  return { x: w / 2 - c[0], y: h / 2 - c[1], dist, fw };
+}
+
+// The cloud is built from footage of the DAWs at work, turning slowly from one into the next: a long hold on each,
+// then a blend in which patches change over first. To add footage, add { src } here (keep: stretches to stay within).
+const SOURCES = [
+  { src: 'media/cloud-ableton.mp4' },
+  { src: 'media/cloud-reaper.mp4', keep: [[8.2, 13.3], [16.8, 54.6]] },   // skips the white plugin windows
+  { src: 'media/cloud-renoise.mp4' }
+];
+const HOLD = new URLSearchParams(location.search).has('hold') ? [+new URLSearchParams(location.search).get('hold'), +new URLSearchParams(location.search).get('hold')] : [16, 24], BLEND = 6;
+const abs = (u) => new URL(u, location.href).href;
+const slot2 = hide(K.video({ src: abs(SOURCES[1 % SOURCES.length].src) }, { preload: 'auto', poster: false }));
+const slots = [ambient, slot2], slotSrc = [0, 1 % SOURCES.length];
+if (ambient.getAttribute('src') !== abs(SOURCES[0].src)) ambient.src = abs(SOURCES[0].src);
+const texA2 = new THREE.VideoTexture(slot2);
+texA2.colorSpace = THREE.NoColorSpace; texA2.minFilter = THREE.LinearFilter; texA2.generateMipmaps = false;
+U.uA2 = { value: texA2 }; U.uSrc = { value: 0 };
+let cur = 0, w1 = 0, srcPhase = 'hold', srcT = 0, holdFor = HOLD[0] + Math.random() * (HOLD[1] - HOLD[0]);
+function keepOf(i) { return SOURCES[slotSrc[i]].keep || null; }
+function startOf(i) { const k = keepOf(i); return k ? k[0][0] : 0; }
+function stayWithin(i) {
+  const v = slots[i], k = keepOf(i);
+  if (!k || v.readyState < 1 || v.seeking) return;
+  const ct = v.currentTime;
+  if (k.some((s) => ct >= s[0] && ct < s[1])) return;
+  v.currentTime = (k.find((s) => s[0] > ct) || k[0])[0];
+}
+function sources(dt) {
+  const showing = [cur === 0 || srcPhase === 'blend', cur === 1 || srcPhase === 'blend'];
+  slots.forEach((v, i) => {
+    if (want || !showing[i]) { if (!v.paused) v.pause(); }
+    else { if (v.paused && !RM) v.play().catch(() => {}); stayWithin(i); }
+  });
+  if (RM || want || SOURCES.length < 2) return;
+  srcT += dt;
+  if (srcPhase === 'hold' && srcT > holdFor) {
+    const nxt = 1 - cur;
+    try { slots[nxt].currentTime = startOf(nxt); } catch (e) {}
+    srcPhase = 'blend'; srcT = 0;
+  } else if (srcPhase === 'blend') {
+    const k = Math.min(1, srcT / BLEND), e = k * k * (3 - 2 * k);
+    w1 = cur === 0 ? e : 1 - e;
+    if (k >= 1) {
+      cur = 1 - cur; srcPhase = 'hold'; srcT = 0; holdFor = HOLD[0] + Math.random() * (HOLD[1] - HOLD[0]);
+      // the hidden slot takes the source after the one now showing
+      const hid = 1 - cur, n = (slotSrc[cur] + 1) % SOURCES.length;
+      if (slotSrc[hid] !== n) { slotSrc[hid] = n; slots[hid].src = abs(SOURCES[n].src); }
+    }
+  }
+}
+
+// The lens: mostly the gentle depth of field the cloud always had. At random moments it opens wide for a few
+// seconds: the focus moves to a random depth, pulls slowly to another, and out-of-focus points become soft lens
+// discs; then it settles back. How wide, where, how long and how often are all drawn anew each time.
+const REST = { ap: 2.2, off: -0.15 };
+let lensAp = REST.ap, lensOff = REST.off, lensBokeh = 0, lens = null, nextLens = new URLSearchParams(location.search).has('lens') ? 1 : 4 + Math.random() * 7;
+function lensStep(dt) {
+  if (RM || want) { lens = null; lensAp = REST.ap; lensOff = REST.off; lensBokeh = 0; return; }
+  if (!lens && t > nextLens) {
+    // the pull sweeps the sharp band through the cloud, from one side of its middle to the other
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const from = side * (0.12 + Math.random() * 0.5), to = -side * (0.12 + Math.random() * 0.5);
+    lens = { t: 0, inT: 0.8 + Math.random() * 1.2, hold: 1.8 + Math.random() * 3.4, outT: 1 + Math.random() * 1.5,
+             ap: 3.5 + Math.random() * 6.5, from, to, bokeh: 0.6 + Math.random() * 0.4 };
+  }
+  if (!lens) return;
+  lens.t += dt;
+  const ease = (x) => x * x * (3 - 2 * x), L = lens;
+  let k, pull;
+  if (L.t < L.inT) { k = ease(L.t / L.inT); pull = 0; }
+  else if (L.t < L.inT + L.hold) { k = 1; pull = ease((L.t - L.inT) / L.hold); }
+  else if (L.t < L.inT + L.hold + L.outT) { k = 1 - ease((L.t - L.inT - L.hold) / L.outT); pull = 1; }
+  else { lens = null; nextLens = t + 5 + Math.pow(Math.random(), 1.3) * 16; lensAp = REST.ap; lensOff = REST.off; lensBokeh = 0; return; }
+  const off = L.from + (L.to - L.from) * pull;
+  lensAp = REST.ap + (L.ap - REST.ap) * k; lensOff = REST.off + (off - REST.off) * k; lensBokeh = L.bokeh * k;
+}
+
+let want = 0, f = 0, fVel = 0, mix = 0, t = 0, flowT = 0, speed = 1;
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  if (document.hidden) return;
+  const dt = Math.min(0.05, clock.getDelta());
+  sources(dt); U.uSrc.value = w1;
+  t += dt; idle += dt;
+  // The flatten is a critically damped spring: deliberate on the way in, quick on the way out.
+  if (RM) { f = want ? 1 : 0; fVel = 0; }
+  else {
+    const k = want ? 9 : 38, c = 2 * Math.sqrt(k);
+    fVel += (k * ((want ? 1 : 0) - f) - c * fVel) * dt;
+    f = Math.min(1, Math.max(0, f + fVel * dt));
+  }
+  mix += ((want ? 1 : 0) - mix) * Math.min(1, dt * (want ? 8 : 1.6));
+  U.uFlat.value = f; U.uMix.value = mix;
+  const va = ambient.videoWidth ? ambient.videoWidth / ambient.videoHeight : 16 / 9;
+  const vb = shell.video.videoWidth ? shell.video.videoWidth / shell.video.videoHeight : va;
+  const aspect = va + (vb - va) * mix;
+  U.uAspect.value = aspect;
+  // A glide: from where the view is to a new angle, eased in and out; then it holds until the next one.
+  if (!RM && !want && t > nextGlide) {
+    gFrom = [tAz, tEl];
+    let a = tAz;
+    for (let i = 0; i < 24 && Math.abs(a - tAz) < 0.45; i++) a = pick(GLIDE.az);
+    gTo = [a, pick(GLIDE.el)];
+    gT = 0; gDur = 2 + Math.random() * 2.6;
+    nextGlide = t + gDur + 2.5 + Math.pow(Math.random(), 1.2) * 11.5;
+  }
+  if (gT < 1) {
+    gT = Math.min(1, gT + dt / gDur);
+    const e = gT * gT * gT * (gT * (gT * 6 - 15) + 10);
+    tAz = gFrom[0] + (gTo[0] - gFrom[0]) * e; tEl = gFrom[1] + (gTo[1] - gFrom[1]) * e;
+  }
+  az += (tAz - az) * Math.min(1, dt * 6); el += (tEl - el) * Math.min(1, dt * 6);
+  const iv = idleView(), fv = flatView(aspect);
+  const A = az * (1 - f), E = el * (1 - f);
+  const R = iv.dist + (fv.dist - iv.dist) * f;
+  camera.position.set(Math.sin(A) * Math.cos(E) * R, Math.sin(E) * R, Math.cos(A) * Math.cos(E) * R);
+  camera.lookAt(0, 0, 0.1 * (1 - f));
+  const w = cv.clientWidth, h = cv.clientHeight;
+  camera.setViewOffset(w, h, iv.x + (fv.x - iv.x) * f, iv.y + (fv.y - iv.y) * f, w, h);
+  camera.updateProjectionMatrix();
+  lensStep(dt);
+  U.uFocus.value = R + lensOff; U.uAperture.value = lensAp; U.uBokeh.value = lensBokeh;
+  U.uMaxPt.value = 64 * renderer.getPixelRatio();
+  U.uCell.value = (fv.fw / NX) * renderer.getPixelRatio() * 1.6;
+  speed = 1;
+  flowT += dt * (RM ? 0 : speed);
+  U.uT.value = flowT;
+  if (true || true) {
+    const pr = renderer.getPixelRatio(), pad = 16;
+    if (true) { const T = textBox(); U.uClear.value.set((T.left - pad) * pr, (h - T.bottom - pad) * pr, (T.right + pad) * pr, (h - T.top + pad) * pr); }
+    else U.uClear.value.set(-9e4, -9e4, -8e4, -8e4);
+    if (true) { const Lr = listEl.getBoundingClientRect(); U.uClear2.value.set((Lr.left - 12) * pr, (h - Lr.bottom - 12) * pr, (Lr.right + 12) * pr, (h - Lr.top + 12) * pr); }
+    else U.uClear2.value.set(-9e4, -9e4, -8e4, -8e4);
+    U.uFeather.value = 70 * pr;
+    U.uVPx.value.set(w * pr, h * pr);
+    U.uClearAmt.value = 1 - f;
+  } else U.uClearAmt.value = 0;
+
+  screen.scale.set(aspect, 1, 1);
+  screenMat.opacity = Math.max(0, (f - 0.8) / 0.2);
+  if (shell.video.readyState >= 2) texB.needsUpdate = true;
+  bloom.strength = BLOOM.strength * (1 - f);
+  composer.render(dt);
+});
+</script>
+</body>
+</html>
