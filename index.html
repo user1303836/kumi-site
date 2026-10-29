@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kumi · an AI agent in your DAW</title>
 <meta name="description" content="A free, open-source AI agent that works inside Ableton Live, REAPER and Renoise. Ask for the sound in your head, a mix like a track you love, or the patch from a tutorial: Kumi builds it in your project and listens until it’s right.">
+<meta name="robots" content="noindex">
 <meta name="theme-color" content="#05060d">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -54,7 +55,7 @@ function stayLit() {
 ambient.addEventListener('loadedmetadata', stayLit);
 const hooks = { daw() {} };
 const shell = KumiShell.mount({
-  layout: LAYOUT, theme: 'dark', font: 'mona', mono: 'geist-mono',
+  layout: LAYOUT, theme: 'dark', font: 'roboto-mono', mono: 'roboto-mono',
   colors: { accent: '#9fe3ff' }, stage: 'self',
   daws: 'marks', dawsAt: 'kicker', dawColor: 'dim', dawSize: 18, line: 1, demoStyle: 'squares', headStyle: 'one', head: 15,
   onDaw: (i, daw) => hooks.daw(i, daw),
@@ -376,5 +377,6 @@ renderer.setAnimationLoop(() => {
   composer.render(dt);
 });
 </script>
+<nav id="pv" aria-label="Preview fonts"><span>preview · font</span><a data-f="roboto-mono" href="?font=roboto-mono">Roboto Mono</a><a data-f="plex" href="?font=plex">IBM Plex Mono</a><a data-f="jetbrains" href="?font=jetbrains">JetBrains Mono</a><a data-f="geist-mono" href="?font=geist-mono">Geist Mono</a><a data-f="dm" href="?font=dm">DM Mono</a><a data-f="source" href="?font=source">Source Code Pro</a><a data-f="mona" href="?font=mona">now: Mona Sans</a></nav><style>#pv{position:fixed;z-index:50;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;width:max-content;max-width:calc(100vw - 24px);padding:6px 12px;background:rgba(5,6,13,.82);border:1px solid rgba(255,255,255,.18);font:500 11px/1.4 ui-monospace,Menlo,monospace;color:#8a8f99;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}#pv a{color:#c9cdd4;text-decoration:none}#pv a.on{color:#9fe3ff;text-decoration:underline}</style><script>(function(){var f=new URLSearchParams(location.search).get("font")||"roboto-mono";document.querySelectorAll("#pv a").forEach(function(a){if(a.dataset.f===f)a.className="on";});})();</script>
 </body>
 </html>
