@@ -254,7 +254,12 @@
       'Kumi is an AI agent that works in your DAW. It becomes *uniquely yours*, shaped by your taste and workflow, session after session.',
       'Kumi is an AI agent that works in your DAW, and it’s *uniquely yours*: shaped by your taste and the way you work, session after session.',
       'Kumi is an AI agent that works in your DAW. It’s uniquely yours, shaped by your taste and workflow, *session after session.*',
-      'Kumi is an AI agent that works in your DAW and *becomes yours*, shaped by your taste and workflow, session after session.'
+      'Kumi is an AI agent that works in your DAW and *becomes yours*, shaped by your taste and workflow, session after session.',
+      // 26–29: the same wordings with no highlight (A, C, D, E)
+      'Kumi is an AI agent that works in your DAW. It becomes uniquely yours, shaped by your taste and workflow, session after session.',
+      'Kumi is an AI agent that works in your DAW, and it’s uniquely yours: shaped by your taste and the way you work, session after session.',
+      'Kumi is an AI agent that works in your DAW. It’s uniquely yours, shaped by your taste and workflow, session after session.',
+      'Kumi is an AI agent that works in your DAW and becomes yours, shaped by your taste and workflow, session after session.'
     ],
     // Candidate lines under the headline, for comparing in place: a page shows lines[n] with ?line=n (0 = its own).
     lines: [

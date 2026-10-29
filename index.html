@@ -57,7 +57,7 @@ const hooks = { daw() {} };
 const shell = KumiShell.mount({
   layout: LAYOUT, theme: 'dark', font: 'roboto-mono', mono: 'roboto-mono',
   colors: { accent: '#9fe3ff' }, stage: 'self',
-  daws: 'marks', dawsAt: 'kicker', dawColor: 'dim', dawSize: 18, line: 1, demoStyle: 'squares', headStyle: 'one', head: 21,
+  daws: 'marks', dawsAt: 'kicker', dawColor: 'dim', dawSize: 18, line: 1, demoStyle: 'squares', headStyle: 'one', head: 26,
   onDaw: (i, daw) => hooks.daw(i, daw),
   onDemo: (i, d, video) => { if (!video.parentNode) hide(video); want = 1; ambient.pause(); },
   onRelease: () => { want = 0; if (!RM) ambient.play().catch(() => {}); }
@@ -377,6 +377,6 @@ renderer.setAnimationLoop(() => {
   composer.render(dt);
 });
 </script>
-<nav id="pv" aria-label="Preview"><span>preview · headline</span><a data-f="21" href="?head=21">A</a><a data-f="22" href="?head=22">B</a><a data-f="23" href="?head=23">C</a><a data-f="24" href="?head=24">D</a><a data-f="25" href="?head=25">E</a><a data-f="15" href="?head=15">current wording</a></nav><style>#pv{position:fixed;z-index:50;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;width:max-content;max-width:calc(100vw - 24px);padding:6px 12px;background:rgba(5,6,13,.82);border:1px solid rgba(255,255,255,.18);font:500 11px/1.4 ui-monospace,Menlo,monospace;color:#8a8f99;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}#pv a{color:#c9cdd4;text-decoration:none}#pv a.on{color:#9fe3ff;text-decoration:underline}</style><script>(function(){var f=new URLSearchParams(location.search).get("head")||"21";document.querySelectorAll("#pv a").forEach(function(a){if(a.dataset.f===f)a.className="on";});})();</script>
+<nav id="pv" aria-label="Preview"><span>preview · headline</span><a data-f="26" href="?head=26">A</a><a data-f="27" href="?head=27">C</a><a data-f="28" href="?head=28">D</a><a data-f="29" href="?head=29">E</a></nav><style>#pv{position:fixed;z-index:50;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;width:max-content;max-width:calc(100vw - 24px);padding:6px 12px;background:rgba(5,6,13,.82);border:1px solid rgba(255,255,255,.18);font:500 11px/1.4 ui-monospace,Menlo,monospace;color:#8a8f99;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}#pv a{color:#c9cdd4;text-decoration:none}#pv a.on{color:#9fe3ff;text-decoration:underline}</style><script>(function(){var f=new URLSearchParams(location.search).get("head")||"26";document.querySelectorAll("#pv a").forEach(function(a){if(a.dataset.f===f)a.className="on";});})();</script>
 </body>
 </html>
