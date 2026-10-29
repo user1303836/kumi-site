@@ -231,6 +231,10 @@
 .ks[data-type="mono"][data-head="one"] .ks-h1 { font-size: max(16px, calc(clamp(20px, 1.95vw, 31px) * var(--ks-hscale, 1))); }
 .ks[data-type="mono"] .ks-sub { font-size: clamp(13px, 0.95vw, 14.5px); line-height: 1.75; }
 .ks[data-type="mono"] .ks-after { font-family: var(--ks-mono); font-size: 12px; }
+/* optical alignment: monospaced letters carry blank space on their left, about 0.075em; pull the headline and the
+   footer back by it so their letters line up with the DAW logos above (which start on the edge) */
+.ks[data-type="mono"] .ks-h1 { margin-left: -0.075em; }
+.ks[data-type="mono"] .ks-foot { margin-left: -0.14em; }
 
 /* a headline given as one string: plain words in the main colour, *starred* phrases in the accent */
 .ks-h1[data-accent="marked"] span { display: inline; color: var(--ks-fg); }
