@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kumi · an AI agent in your DAW</title>
 <meta name="description" content="A free, open-source AI agent that works inside Ableton Live, REAPER and Renoise. Ask for the sound in your head, a mix like a track you love, or the patch from a tutorial: Kumi builds it in your project and listens until it’s right.">
+<meta name="robots" content="noindex">
 <meta name="theme-color" content="#05060d">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -33,6 +34,8 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 const K = window.KUMI, RM = K.reducedMotion();
 const LAYOUT = 'bottom';
@@ -92,6 +95,7 @@ const PRELUDE = `
   attribute vec2 uvp; attribute float rnd; attribute float layer;
   uniform sampler2D uA, uB; uniform float uMix, uFlat, uAspect, uDepth, uScan, uFocus, uView, uT, uCell;
   uniform float uAperture, uBokeh, uMaxPt;
+  uniform float uFog, uFogNear, uFogFar;
   uniform sampler2D uA2; uniform float uSrc;
   float srcW = 0.0;   // how far this point has turned into the other source video
   uniform vec4 uClear; uniform vec4 uClear2; uniform float uClearAmt; uniform float uFeather; uniform vec2 uVPx;
@@ -138,6 +142,8 @@ const mat = new THREE.ShaderMaterial({
       float idleSize = min((1.1 + 2.1 * l + coc * 4.5) * (uView / 1000.0) * (3.0 / dist), uMaxPt);
       gl_PointSize = mix(idleSize, uCell, uFlat) * keep;
       vA = keep / (1.0 + coc * coc * 6.0) / max(thin, 0.001);
+      // fog: the further a point is from the camera, the fainter it gets (never while the picture is flat)
+      vA *= 1.0 - uFog * smoothstep(uFogNear, uFogFar, dist) * (1.0 - uFlat);
       vCoc = coc;
       vCol = c; vTone = smoothstep(0.1, 0.7, l);
     }`,
@@ -178,14 +184,55 @@ const mobile = () => innerWidth <= 820;
 // Glow: only the brightest points bleed a little light. It fades out while a demo plays, so the video stays clean.
 // The passes render in half-float, so faint additive points also stay true to colour.
 const BLOOM = (() => { const q = new URLSearchParams(location.search); return { strength: +(q.get('glow') || 0.32), radius: +(q.get('glowr') || 0.45), threshold: +(q.get('glowt') || 0.62) }; })();
+// Trails and atmosphere, each a URL parameter for comparing. trail: how slowly each frame's afterimage fades (0 = off,
+// 0.82 short … 0.975 very long; none while a demo plays). fog, grain, vig(nette): 0 = off up to about 1.
+const FX = (() => { const q = new URLSearchParams(location.search), n = (k, d) => (q.has(k) ? +q.get(k) : d);
+  return { trail: n('trail', 0.9), fog: n('fog', 0.4), grain: n('grain', 0), vig: n('vig', 0.35) }; })();
+U.uFog = { value: FX.fog }; U.uFogNear = { value: 3 }; U.uFogFar = { value: 4 };
+// The fog's band follows the view: from a third of the way into the cloud's depth (as seen from the camera) to its far
+// side, so it works from any angle: head-on the dim far points sink, from the side the far end does.
+const corner = new THREE.Vector3();
+function fogBand(aspect) {
+  let lo = 1e9, hi = -1e9;
+  for (let i = 0; i < 8; i++) {
+    corner.set((i & 1 ? 0.5 : -0.5) * aspect, i & 2 ? 0.5 : -0.5, i & 4 ? 1.0 : -0.25).applyMatrix4(camera.matrixWorldInverse);
+    lo = Math.min(lo, -corner.z); hi = Math.max(hi, -corner.z);
+  }
+  U.uFogNear.value = lo + (hi - lo) * 0.3; U.uFogFar.value = hi;
+}
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
+const trails = new AfterimagePass(FX.trail);
+trails.enabled = FX.trail > 0;
+// three's afterimage drops anything fainter than 0.1 (a guard for 8-bit buffers); these are half-float, so let the
+// faint ends of the trails fade out smoothly instead of cutting off.
+trails.compFsMaterial.fragmentShader = trails.compFsMaterial.fragmentShader.replace('when_gt( texelOld, 0.1 )', 'when_gt( texelOld, 0.004 )');
+composer.addPass(trails);                       // before the glow, so the trails glow like the points
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
 composer.addPass(bloom);
+// the last pass: a vignette (the corners sink toward black) and fine moving grain, a little stronger in the darks
+const atmos = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uGrain: { value: FX.grain }, uVig: { value: FX.vig }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: [
+    'uniform sampler2D tDiffuse; uniform float uGrain, uVig, uTime; uniform vec2 uRes; varying vec2 vUv;',
+    'float h(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }',
+    'void main() {',
+    '  vec4 c = texture2D(tDiffuse, vUv);',
+    '  vec2 d = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);',
+    '  c.rgb *= 1.0 - uVig * 0.85 * smoothstep(0.35, 1.1, length(d));',
+    '  float g = h(floor(vUv * uRes) + floor(uTime * 24.0) * vec2(37.0, 17.0)) - 0.5;',   // new grain 24 times a second
+    '  c.rgb += g * uGrain * 0.09 * (1.0 - 0.5 * dot(c.rgb, vec3(0.333)));',
+    '  gl_FragColor = c;',
+    '}'].join('\n')
+});
+atmos.enabled = FX.grain > 0 || FX.vig > 0;
+composer.addPass(atmos);
 function size() {
   const w = cv.clientWidth, h = cv.clientHeight;
   renderer.setSize(w, h, false);
   composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h);
+  atmos.uniforms.uRes.value.set(cv.width, cv.height);
   U.uView.value = h * renderer.getPixelRatio();
   camera.aspect = w / Math.max(1, h);
   camera.fov = camera.aspect < 1 ? 50 : 34;
@@ -373,8 +420,12 @@ renderer.setAnimationLoop(() => {
   screenMat.opacity = Math.max(0, (f - 0.8) / 0.2);
   if (shell.video.readyState >= 2) texB.needsUpdate = true;
   bloom.strength = BLOOM.strength * (1 - f);
+  trails.uniforms.damp.value = Math.pow(FX.trail, dt * 60) * (1 - f);   // the same trail length at any frame rate
+  atmos.uniforms.uTime.value = RM ? 0 : t;
+  camera.updateMatrixWorld(); fogBand(aspect);
   composer.render(dt);
 });
 </script>
+<nav id="pv" aria-label="Preview"><b>preview ·</b><span><b>mix</b><a data-k="trail,fog,grain,vig" data-v="0,0,0,0" href="?trail=0&amp;fog=0&amp;grain=0&amp;vig=0">now</a><a data-k="trail,fog,grain,vig" data-v="0.9,0.4,0,0.35" href="?trail=0.9&amp;fog=0.4&amp;grain=0&amp;vig=0.35">soft</a><a data-k="trail,fog,grain,vig" data-v="0.82,0,0.35,0.35" href="?trail=0.82&amp;fog=0&amp;grain=0.35&amp;vig=0.35">film</a><a data-k="trail,fog,grain,vig" data-v="0.95,0.8,0.35,0.75" href="?trail=0.95&amp;fog=0.8&amp;grain=0.35&amp;vig=0.75">deep</a><a data-k="trail,fog,grain,vig" data-v="0.975,0.4,0,0" href="?trail=0.975&amp;fog=0.4&amp;grain=0&amp;vig=0">ghost</a></span><i></i><span><b>trails</b><a data-k="trail" data-v="0" href="?trail=0">off</a><a data-k="trail" data-v="0.82" href="?trail=0.82">short</a><a data-k="trail" data-v="0.9" href="?trail=0.9">medium</a><a data-k="trail" data-v="0.95" href="?trail=0.95">long</a><a data-k="trail" data-v="0.975" href="?trail=0.975">ghost</a></span><i></i><span><b>fog</b><a data-k="fog" data-v="0" href="?fog=0">off</a><a data-k="fog" data-v="0.4" href="?fog=0.4">light</a><a data-k="fog" data-v="0.8" href="?fog=0.8">heavy</a></span><i></i><span><b>grain</b><a data-k="grain" data-v="0" href="?grain=0">off</a><a data-k="grain" data-v="0.35" href="?grain=0.35">light</a><a data-k="grain" data-v="0.8" href="?grain=0.8">heavy</a></span><i></i><span><b>vignette</b><a data-k="vig" data-v="0" href="?vig=0">off</a><a data-k="vig" data-v="0.35" href="?vig=0.35">soft</a><a data-k="vig" data-v="0.75" href="?vig=0.75">strong</a></span></nav><style>#pv{position:fixed;z-index:50;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;width:max-content;max-width:min(800px,calc(100vw - 24px));padding:6px 12px;background:rgba(5,6,13,.82);border:1px solid rgba(255,255,255,.18);font:500 11px/1.4 ui-monospace,Menlo,monospace;color:#8a8f99;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}#pv b{font-weight:500;color:#8a8f99}#pv span{display:flex;gap:0 10px;white-space:nowrap}#pv i{width:1px;align-self:stretch;background:rgba(255,255,255,.18)}#pv a{color:#c9cdd4;text-decoration:none}#pv a.on{color:#9fe3ff;text-decoration:underline}</style><script>(function(){var q=new URLSearchParams(location.search),d={"trail": "0.9", "fog": "0.4", "grain": "0", "vig": "0.35"};document.querySelectorAll("#pv a").forEach(function(a){var k=a.dataset.k.split(","),v=a.dataset.v.split(",");if(k.every(function(x,i){return(q.get(x)||d[x])===v[i];}))a.className="on";a.addEventListener("click",function(e){e.preventDefault();k.forEach(function(x,i){q.set(x,v[i]);});location.search=q.toString();});});})();</script>
 </body>
 </html>
