@@ -7,8 +7,9 @@
    const shell = KumiShell.mount({
      layout: 'left',          // left | right | bottom | center | top
      theme: 'dark',           // dark | light (sets the default colours)
-     font: 'geist',           // geist | inter-tight | instrument | mona | onest | hanken | schibsted | host | funnel | figtree | albert | manrope
-     mono: 'jetbrains',       // jetbrains | geist-mono | plex | dm | redhat | spline
+     font: 'geist',           // geist | inter-tight | instrument | mona | onest | hanken | schibsted | host | funnel | figtree | albert | manrope,
+                              //   or a monospace key below to set the whole page in it; ?font= overrides
+     mono: 'jetbrains',       // jetbrains | geist-mono | roboto-mono | plex | dm | source | redhat | spline
      colors: { fg, dim, faint, accent, panel, line },   // any subset overrides the theme
      headline: ['An AI agent', 'that works alongside you', 'in your DAW.'],
      kicker: 'Ableton Live · REAPER · Renoise',
@@ -47,13 +48,16 @@
     albert: ['Albert Sans', 'Albert+Sans:wght@300..700'],
     manrope: ['Manrope', 'Manrope:wght@300..700']
   };
+  // monospaces; any of these can also be the page's `font`, and then the whole page is set in it
   var MONOS = {
-    jetbrains: ['JetBrains Mono', 'JetBrains+Mono:wght@400..600'],
-    'geist-mono': ['Geist Mono', 'Geist+Mono:wght@400..600'],
-    plex: ['IBM Plex Mono', 'IBM+Plex+Mono:wght@400;500'],
-    dm: ['DM Mono', 'DM+Mono:wght@400;500'],
-    redhat: ['Red Hat Mono', 'Red+Hat+Mono:wght@400..600'],
-    spline: ['Spline Sans Mono', 'Spline+Sans+Mono:wght@400..600']
+    jetbrains: ['JetBrains Mono', 'JetBrains+Mono:wght@300..700'],
+    'geist-mono': ['Geist Mono', 'Geist+Mono:wght@300..700'],
+    'roboto-mono': ['Roboto Mono', 'Roboto+Mono:wght@300..700'],
+    plex: ['IBM Plex Mono', 'IBM+Plex+Mono:wght@300;400;500;600'],
+    dm: ['DM Mono', 'DM+Mono:wght@300;400;500'],
+    source: ['Source Code Pro', 'Source+Code+Pro:wght@300..700'],
+    redhat: ['Red Hat Mono', 'Red+Hat+Mono:wght@300..700'],
+    spline: ['Spline Sans Mono', 'Spline+Sans+Mono:wght@300..700']
   };
   var THEMES = {
     dark: { fg: '#f2f2ef', dim: '#a6a6a2', faint: '#6e6e6b', accent: '#ff4f7b', panel: 'rgba(10,10,10,0.66)', line: 'rgba(255,255,255,0.14)' },
@@ -206,10 +210,14 @@
   function mount(o) {
     o = o || {};
     var K = window.KUMI;
-    var font = FONTS[o.font] || FONTS.geist, mono = MONOS[o.mono] || MONOS.jetbrains;
+    var params = new URLSearchParams(location.search);
+    // ?font= picks the face for comparing; a monospace there sets the whole page in it
+    var fontKey = (FONTS[params.get('font')] || MONOS[params.get('font')]) ? params.get('font') : o.font;
+    var allMono = !!MONOS[fontKey];
+    var font = allMono ? MONOS[fontKey] : FONTS[fontKey] || FONTS.geist, mono = allMono ? MONOS[fontKey] : MONOS[o.mono] || MONOS.jetbrains;
     var link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=' + font[1] + '&family=' + mono[1] + '&display=swap';
+    link.href = 'https://fonts.googleapis.com/css2?family=' + font[1] + (mono !== font ? '&family=' + mono[1] : '') + '&display=swap';
     document.head.appendChild(link);
     document.documentElement.classList.add('ks-root');
 
@@ -218,19 +226,21 @@
     var root = el('div', 'ks');
     root.dataset.layout = o.layout || 'left';
     root.dataset.theme = o.theme === 'light' ? 'light' : 'dark';
+    root.dataset.type = allMono ? 'mono' : 'sans';
     root.style.setProperty('--ks-sans', '"' + font[0] + '", "Helvetica Neue", Arial, sans-serif');
     root.style.setProperty('--ks-mono', '"' + mono[0] + '", ui-monospace, SFMono-Regular, Menlo, monospace');
     ['fg', 'dim', 'faint', 'accent', 'panel', 'line'].forEach(function (k) { root.style.setProperty('--ks-' + k, c[k]); });
 
-    var params = new URLSearchParams(location.search);
     var head = +(params.get('head') || o.head || 0);
-    var lines = ((head && K.headlines && K.headlines[head]) || o.headline || ['An AI agent', 'that works alongside you', 'in your DAW.']).slice();
+    // a headline is three parts (white, grey, accent), or one string in which *starred* phrases take the accent
+    var lines = (head && K.headlines && K.headlines[head]) || o.headline || ['An AI agent', 'that works alongside you', 'in your DAW.'];
+    if (typeof lines !== 'string') lines = lines.slice();
     // how the headline is set: 'tri' (three lines: white, grey, accent), 'two' (the first two parts on one line, the payoff
     // below), 'one' (one flowing sentence), 'label' (the first part as a small label over a statement), 'giant' (the same,
     // the statement very large), 'weight' (three lines in one colour, light to bold)
     var headStyle = params.get('hs') || o.headStyle || 'tri';
     root.dataset.head = headStyle;
-    if ((headStyle === 'label' || headStyle === 'giant') && lines.length === 3) {
+    if ((headStyle === 'label' || headStyle === 'giant') && typeof lines !== 'string' && lines.length === 3) {
       lines[1] = lines[1].replace(/^that /i, '');
       lines[1] = lines[1].charAt(0).toUpperCase() + lines[1].slice(1);
     }
@@ -245,7 +255,16 @@
     var hero = el('main', 'ks-hero');
     var kicker = el('p', 'ks-kicker'); kicker.textContent = o.kicker != null ? o.kicker : 'Ableton Live · REAPER · Renoise';
     var h1 = el('h1', 'ks-h1');
-    lines.forEach(function (l, i) { var s = el('span', 'ks-l' + (i === lines.length - 1 ? 3 : i === 0 ? 1 : 2)); s.textContent = l; h1.appendChild(s); h1.appendChild(document.createTextNode(' ')); });
+    if (typeof lines === 'string') {
+      h1.dataset.accent = 'marked';
+      lines.split(/(\*[^*]+\*)/).forEach(function (seg) {
+        if (!seg) return;
+        var marked = seg.length > 2 && seg.charAt(0) === '*' && seg.charAt(seg.length - 1) === '*';
+        var s = el('span', marked ? 'ks-acc' : 'ks-txt'); s.textContent = marked ? seg.slice(1, -1) : seg; h1.appendChild(s);
+      });
+    } else {
+      lines.forEach(function (l, i) { var s = el('span', 'ks-l' + (i === lines.length - 1 ? 3 : i === 0 ? 1 : 2)); s.textContent = l; h1.appendChild(s); h1.appendChild(document.createTextNode(' ')); });
+    }
     var sub = el('p', 'ks-sub'); sub.textContent = o.sub || 'Kumi reads your project, changes almost anything in it, listens to the result and learns how you work. You ask in plain words; every step lands in its history with an undo.';
     var line = +(params.get('line') || o.line || 0);
     if (line && K.lines && K.lines[line]) sub.textContent = K.lines[line];

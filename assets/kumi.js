@@ -248,7 +248,13 @@
       ['Your DAW’s AI agent,', 'shaped by your taste,', 'session after session.'],
       ['An AI agent in your DAW.', 'Shaped by your taste,', 'session after session.'],
       ['An AI agent in your DAW', 'that learns your taste,', 'session after session.'],
-      ['Inside your DAW, an AI agent', 'shaped by your taste,', 'session after session.']
+      ['Inside your DAW, an AI agent', 'shaped by your taste,', 'session after session.'],
+      // 21–25 (2026-10-29): "Kumi is …" and "uniquely yours"; one string each, *starred* = accent
+      'Kumi is an AI agent that works in your DAW. It becomes uniquely yours, shaped by your taste and workflow, *session after session.*',
+      'Kumi is an AI agent that works in your DAW. It becomes *uniquely yours*, shaped by your taste and workflow, session after session.',
+      'Kumi is an AI agent that works in your DAW, and it’s *uniquely yours*: shaped by your taste and the way you work, session after session.',
+      'Kumi is an AI agent that works in your DAW. It’s uniquely yours, shaped by your taste and workflow, *session after session.*',
+      'Kumi is an AI agent that works in your DAW and *becomes yours*, shaped by your taste and workflow, session after session.'
     ],
     // Candidate lines under the headline, for comparing in place: a page shows lines[n] with ?line=n (0 = its own).
     lines: [
