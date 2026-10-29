@@ -38,9 +38,29 @@ const K = window.KUMI, RM = K.reducedMotion();
 const LAYOUT = 'bottom';
 THREE.ColorManagement.enabled = false;  // hex colours and video values pass straight to the screen
 
-// Two sources: a quiet looping demo for the idle cloud, and the shell's video when a demo is picked.
+// Two sources: footage of the DAWs at work for the idle cloud, and the shell's video when a demo is picked.
 function hide(v) { v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none'; document.body.appendChild(v); return v; }
-const ambient = hide(K.video({ src: new URL('media/cloud-ableton.mp4', location.href).href }, { autoplay: !RM, preload: 'auto', poster: false }));
+// The cloud is built from footage of the DAWs at work, turning slowly from one into the next: a long hold on each,
+// then a blend in which patches change over first. To add footage, add { src } here (keep: stretches to stay within).
+const SOURCES = [
+  { src: 'media/cloud-ableton.mp4' },
+  { src: 'media/cloud-reaper.mp4', keep: [[8.2, 13.3], [16.8, 54.6]] },   // skips the white plugin windows
+  { src: 'media/cloud-renoise.mp4' }
+];
+const abs = (u) => new URL(u, location.href).href;
+// The page opens on a random one of them at a random moment, and each one it turns into starts at a random moment too.
+const pickSource = (not) => { const c = SOURCES.map((x, i) => i).filter((i) => !not.includes(i)); return c[Math.floor(Math.random() * c.length)]; };
+function seekRandom(v, s) {
+  const go = () => {
+    const k = SOURCES[s].keep || [[0, v.duration]];
+    let r = Math.random() * k.reduce((a, x) => a + x[1] - x[0], 0);
+    for (const x of k) { if (r < x[1] - x[0]) { v.currentTime = x[0] + r; return; } r -= x[1] - x[0]; }
+  };
+  if (v.readyState >= 1 && isFinite(v.duration)) go(); else v.addEventListener('loadedmetadata', go, { once: true });
+}
+const first = pickSource([]), second = SOURCES.length > 1 ? pickSource([first]) : first;
+const ambient = hide(K.video({ src: abs(SOURCES[first].src) }, { autoplay: !RM, preload: 'auto', poster: false }));
+seekRandom(ambient, first);
 ambient.playbackRate = 1;
 ambient.addEventListener('play', () => { ambient.playbackRate = 1; });
 // The stretches of the ambient demo to stay within (its typed prompt and end screen are nearly black), or null.
@@ -92,6 +112,7 @@ const PRELUDE = `
   attribute vec2 uvp; attribute float rnd; attribute float layer;
   uniform sampler2D uA, uB; uniform float uMix, uFlat, uAspect, uDepth, uScan, uFocus, uView, uT, uCell;
   uniform float uAperture, uBokeh, uMaxPt;
+  uniform float uFog, uFogNear, uFogFar;
   uniform sampler2D uA2; uniform float uSrc;
   float srcW = 0.0;   // how far this point has turned into the other source video
   uniform vec4 uClear; uniform vec4 uClear2; uniform float uClearAmt; uniform float uFeather; uniform vec2 uVPx;
@@ -138,6 +159,8 @@ const mat = new THREE.ShaderMaterial({
       float idleSize = min((1.1 + 2.1 * l + coc * 4.5) * (uView / 1000.0) * (3.0 / dist), uMaxPt);
       gl_PointSize = mix(idleSize, uCell, uFlat) * keep;
       vA = keep / (1.0 + coc * coc * 6.0) / max(thin, 0.001);
+      // fog: the further a point is from the camera, the fainter it gets (never while the picture is flat)
+      vA *= 1.0 - uFog * smoothstep(uFogNear, uFogFar, dist) * (1.0 - uFlat);
       vCoc = coc;
       vCol = c; vTone = smoothstep(0.1, 0.7, l);
     }`,
@@ -178,6 +201,20 @@ const mobile = () => innerWidth <= 820;
 // Glow: only the brightest points bleed a little light. It fades out while a demo plays, so the video stays clean.
 // The passes render in half-float, so faint additive points also stay true to colour.
 const BLOOM = (() => { const q = new URLSearchParams(location.search); return { strength: +(q.get('glow') || 0.32), radius: +(q.get('glowr') || 0.45), threshold: +(q.get('glowt') || 0.62) }; })();
+// Fog: the far side of the cloud sinks into the dark (0 none … 1 the farthest points vanish; ?fog= tries others).
+const FOG = (() => { const q = new URLSearchParams(location.search); return q.has('fog') ? +q.get('fog') : 0.8; })();
+U.uFog = { value: FOG }; U.uFogNear = { value: 3 }; U.uFogFar = { value: 4 };
+// The fog's band follows the view: from a third of the way into the cloud's depth (as seen from the camera) to its far
+// side, so it works from any angle: head-on the dim far points sink, from the side the far end does.
+const corner = new THREE.Vector3();
+function fogBand(aspect) {
+  let lo = 1e9, hi = -1e9;
+  for (let i = 0; i < 8; i++) {
+    corner.set((i & 1 ? 0.5 : -0.5) * aspect, i & 2 ? 0.5 : -0.5, i & 4 ? 1.0 : -0.25).applyMatrix4(camera.matrixWorldInverse);
+    lo = Math.min(lo, -corner.z); hi = Math.max(hi, -corner.z);
+  }
+  U.uFogNear.value = lo + (hi - lo) * 0.3; U.uFogFar.value = hi;
+}
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
@@ -233,24 +270,16 @@ function flatView(aspect) {
   return { x: w / 2 - c[0], y: h / 2 - c[1], dist, fw };
 }
 
-// The cloud is built from footage of the DAWs at work, turning slowly from one into the next: a long hold on each,
-// then a blend in which patches change over first. To add footage, add { src } here (keep: stretches to stay within).
-const SOURCES = [
-  { src: 'media/cloud-ableton.mp4' },
-  { src: 'media/cloud-reaper.mp4', keep: [[8.2, 13.3], [16.8, 54.6]] },   // skips the white plugin windows
-  { src: 'media/cloud-renoise.mp4' }
-];
+// The turn from one source (SOURCES, at the top) to the next: a long hold on each, then a blend.
 const HOLD = new URLSearchParams(location.search).has('hold') ? [+new URLSearchParams(location.search).get('hold'), +new URLSearchParams(location.search).get('hold')] : [16, 24], BLEND = 6;
-const abs = (u) => new URL(u, location.href).href;
-const slot2 = hide(K.video({ src: abs(SOURCES[1 % SOURCES.length].src) }, { preload: 'auto', poster: false }));
-const slots = [ambient, slot2], slotSrc = [0, 1 % SOURCES.length];
-if (ambient.getAttribute('src') !== abs(SOURCES[0].src)) ambient.src = abs(SOURCES[0].src);
+const slot2 = hide(K.video({ src: abs(SOURCES[second].src) }, { preload: 'auto', poster: false }));
+seekRandom(slot2, second);
+const slots = [ambient, slot2], slotSrc = [first, second];
 const texA2 = new THREE.VideoTexture(slot2);
 texA2.colorSpace = THREE.NoColorSpace; texA2.minFilter = THREE.LinearFilter; texA2.generateMipmaps = false;
 U.uA2 = { value: texA2 }; U.uSrc = { value: 0 };
 let cur = 0, w1 = 0, srcPhase = 'hold', srcT = 0, holdFor = HOLD[0] + Math.random() * (HOLD[1] - HOLD[0]);
 function keepOf(i) { return SOURCES[slotSrc[i]].keep || null; }
-function startOf(i) { const k = keepOf(i); return k ? k[0][0] : 0; }
 function stayWithin(i) {
   const v = slots[i], k = keepOf(i);
   if (!k || v.readyState < 1 || v.seeking) return;
@@ -267,17 +296,17 @@ function sources(dt) {
   if (RM || want || SOURCES.length < 2) return;
   srcT += dt;
   if (srcPhase === 'hold' && srcT > holdFor) {
-    const nxt = 1 - cur;
-    try { slots[nxt].currentTime = startOf(nxt); } catch (e) {}
-    srcPhase = 'blend'; srcT = 0;
+    srcPhase = 'blend'; srcT = 0;   // the next source has been waiting, paused, at its random moment
   } else if (srcPhase === 'blend') {
     const k = Math.min(1, srcT / BLEND), e = k * k * (3 - 2 * k);
     w1 = cur === 0 ? e : 1 - e;
     if (k >= 1) {
       cur = 1 - cur; srcPhase = 'hold'; srcT = 0; holdFor = HOLD[0] + Math.random() * (HOLD[1] - HOLD[0]);
-      // the hidden slot takes the source after the one now showing
-      const hid = 1 - cur, n = (slotSrc[cur] + 1) % SOURCES.length;
+      // the hidden slot takes the next source (not the one showing nor, when there are three or more, the one just
+      // left) and waits at a random moment in it
+      const hid = 1 - cur, n = pickSource(SOURCES.length > 2 ? [slotSrc[cur], slotSrc[hid]] : [slotSrc[cur]]);
       if (slotSrc[hid] !== n) { slotSrc[hid] = n; slots[hid].src = abs(SOURCES[n].src); }
+      seekRandom(slots[hid], n);
     }
   }
 }
@@ -373,6 +402,7 @@ renderer.setAnimationLoop(() => {
   screenMat.opacity = Math.max(0, (f - 0.8) / 0.2);
   if (shell.video.readyState >= 2) texB.needsUpdate = true;
   bloom.strength = BLOOM.strength * (1 - f);
+  camera.updateMatrixWorld(); fogBand(aspect);
   composer.render(dt);
 });
 </script>
