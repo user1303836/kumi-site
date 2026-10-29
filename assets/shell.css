@@ -225,6 +225,17 @@
 .ks[data-layout="bottom"][data-head="one"] .ks-hero { grid-template-columns: minmax(0, 1fr) minmax(0, min(560px, 46%)); }
 .ks[data-layout="bottom"][data-head="one"] .ks-hero .ks-sub { max-width: none; }
 
+/* one monospace for the whole page (the font option is a monospace): the big lines get a calmer size and natural
+   spacing, since monospaced letters are wider and tight tracking crowds them */
+.ks[data-type="mono"] .ks-h1 { font-weight: 450; letter-spacing: -0.02em; line-height: 1.24; }
+.ks[data-type="mono"][data-head="one"] .ks-h1 { font-size: max(16px, calc(clamp(20px, 1.95vw, 31px) * var(--ks-hscale, 1))); }
+.ks[data-type="mono"] .ks-sub { font-size: clamp(13px, 0.95vw, 14.5px); line-height: 1.75; }
+.ks[data-type="mono"] .ks-after { font-family: var(--ks-mono); font-size: 12px; }
+
+/* a headline given as one string: plain words in the main colour, *starred* phrases in the accent */
+.ks-h1[data-accent="marked"] span { display: inline; color: var(--ks-fg); }
+.ks-h1[data-accent="marked"] .ks-acc { color: var(--ks-accent); }
+
 /* phones: everything stacks and the page may scroll */
 @media (max-width: 820px) {
   html.ks-root, html.ks-root body { overflow-x: hidden; overflow-y: auto; height: auto; }
