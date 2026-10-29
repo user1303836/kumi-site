@@ -248,7 +248,24 @@
       ['Your DAW’s AI agent,', 'shaped by your taste,', 'session after session.'],
       ['An AI agent in your DAW.', 'Shaped by your taste,', 'session after session.'],
       ['An AI agent in your DAW', 'that learns your taste,', 'session after session.'],
-      ['Inside your DAW, an AI agent', 'shaped by your taste,', 'session after session.']
+      ['Inside your DAW, an AI agent', 'shaped by your taste,', 'session after session.'],
+      // 21–25 (2026-10-29): "Kumi is …" and "uniquely yours"; one string each, *starred* = accent
+      'Kumi is an AI agent that works in your DAW. It becomes uniquely yours, shaped by your taste and workflow, *session after session.*',
+      'Kumi is an AI agent that works in your DAW. It becomes *uniquely yours*, shaped by your taste and workflow, session after session.',
+      'Kumi is an AI agent that works in your DAW, and it’s *uniquely yours*: shaped by your taste and the way you work, session after session.',
+      'Kumi is an AI agent that works in your DAW. It’s uniquely yours, shaped by your taste and workflow, *session after session.*',
+      'Kumi is an AI agent that works in your DAW and *becomes yours*, shaped by your taste and workflow, session after session.',
+      // 26–29: the same wordings with no highlight (A, C, D, E)
+      'Kumi is an AI agent that works in your DAW. It becomes uniquely yours, shaped by your taste and workflow, session after session.',
+      'Kumi is an AI agent that works in your DAW, and it’s uniquely yours: shaped by your taste and the way you work, session after session.',
+      'Kumi is an AI agent that works in your DAW. It’s uniquely yours, shaped by your taste and workflow, session after session.',
+      'Kumi is an AI agent that works in your DAW and becomes yours, shaped by your taste and workflow, session after session.',
+      // 30–34 (F–J): "… for your DAW that’s uniquely yours." and how it grows with you
+      'Kumi is an AI agent for your DAW that’s uniquely yours. It grows with you, shaped by your taste, session after session.',
+      'Kumi is an AI agent for your DAW that’s uniquely yours. It learns your taste and grows with you, session after session.',
+      'Kumi is an AI agent for your DAW that’s uniquely yours. The longer you work together, the more it works like you.',
+      'Kumi is an AI agent for your DAW that’s uniquely yours. Every session, it learns a little more of your taste.',
+      'Kumi is an AI agent for your DAW that’s uniquely yours, and it grows with your taste, session after session.'
     ],
     // Candidate lines under the headline, for comparing in place: a page shows lines[n] with ?line=n (0 = its own).
     lines: [
