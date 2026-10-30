@@ -14,6 +14,7 @@
      headline: ['An AI agent', 'that works alongside you', 'in your DAW.'],
      kicker: 'Ableton Live · REAPER · Renoise',
      sub: '…',
+     after: '…',              // the line under the install command (default: Then follow Kumi’s guided setup.)
      stage: 'self',           // 'self': your visual shows shell.video itself; 'panel': the shell shows it in a frame
      daws: 'marks',           // how the DAWs show: 'text' (the kicker, the default) | 'marks' (a row of logos; the name on hover)
                               //   | 'cycle' (one logo and its name at a time, rolling) | 'dots' (logos built from drifting points)
@@ -274,7 +275,8 @@
     var install = el('div', 'ks-install');
     install.innerHTML = '<div class="ks-tabs" role="tablist" aria-label="Your system"><button data-os="mac" role="tab">macOS / Linux</button><button data-os="win" role="tab">Windows</button><span data-shell></span></div>' +
       '<div class="ks-cmd"><span class="ks-prompt" aria-hidden="true">$</span><code data-cmd tabindex="0"></code><button class="ks-copy" data-copy aria-label="Copy the install command">Copy</button></div>' +
-      '<p class="ks-after">Then follow Kumi’s guided setup.</p>';
+      '<p class="ks-after"></p>';
+    install.querySelector('.ks-after').textContent = o.after || 'Then follow Kumi’s guided setup.';
     var dawStyle = o.daws || 'text';
     if (o.kicker !== false && dawStyle === 'text') hero.appendChild(kicker);
     // sub: false leaves out the line under the headline; ?sub=0 or ?sub=1 overrides, for comparing

@@ -265,7 +265,9 @@
       'Kumi is an AI agent for your DAW that’s uniquely yours. It learns your taste and grows with you, session after session.',
       'Kumi is an AI agent for your DAW that’s uniquely yours. The longer you work together, the more it works like you.',
       'Kumi is an AI agent for your DAW that’s uniquely yours. Every session, it learns a little more of your taste.',
-      'Kumi is an AI agent for your DAW that’s uniquely yours, and it grows with your taste, session after session.'
+      'Kumi is an AI agent for your DAW that’s uniquely yours, and it grows with your taste, session after session.',
+      // 35: F all in lower case
+      'kumi is an ai agent for your daw that’s uniquely yours. it grows with you, shaped by your taste, session after session.'
     ],
     // Candidate lines under the headline, for comparing in place: a page shows lines[n] with ?line=n (0 = its own).
     lines: [

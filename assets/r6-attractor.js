@@ -21,9 +21,19 @@
                                       //   sudden   long stillness, then a morph in under a second (now and then two in a row)
                                       //   restless short holds and quick morphs
                                       //   slow     very long holds and very slow morphs
-                                      //   custom   holds and morphs drawn from `holds` and `morphs` ([min, max] s)
+                                      //   custom   holds and morphs drawn from `holds` and `morphs` ([min, max] s);
+                                      //            `linger` (0–1) of a morph drifts slowly through its amorphous middle,
+                                      //            0.5 ± `lingerSpan`, where neither shape can be told yet
+     haze: 0,                         // points also scatter this far (unit-ball units) at the middle of a morph
      hold: 9, morph: 4,               // for 'steady'
      flow: 1,                         // how fast points move along the shape (1: the round-5 pages' median speed)
+     lens: {                          // how the camera sees it (all optional; {} is the round-5 view):
+       fov: 0.72, near: 0.1,          //   a rectilinear lens's vertical field (radians) and near plane
+       dist: 3.1,                     //   the camera's distance from the shape's centre (divided by size)
+       proj: 0, diag: 90,             //   proj 1 equidistant, 2 stereographic, 3 equisolid fisheye, `diag` degrees from the
+                                      //   axis to the frame's corner
+       aperture: 0, focusDrift: 0, focusRate: 0.05, maxGrow: 10   // depth of field: points off the focus grow into soft
+     },                               //   discs (and fewer show); the focus drifts ±focusDrift through the shape
      spin: 0.09,                      // idle turn, radians per second
      center: [0.32, 0.0],             // where the shape sits, in NDC (or a function returning it)
      size: 1.0, pointSize: 1.0,       // size may be a function (e.g. smaller on a phone)
@@ -35,6 +45,8 @@
      logoRim: 0.25, logoShare: 0.75,  // shares of the points that draw the outline / go to the logo at all (the rest stay, dimmed)
      logoStay: 0.3,                   // share of the points that stay in the attractor that still show while a logo does
      morphWhileLogo: false,           // true: the attractor behind a logo keeps morphing and turning instead of waiting
+     formRate: 2.6, releaseRate: 3.4, slotRate: 3.2,   // how fast (per second) the points gather into a logo, let go,
+                                      // and cross to another logo
      drag: true,                      // false: the shape can't be turned with the mouse; it only turns by itself
      idleVideo: videoEl               // optional: colours while idle in 'video' ink
    });
@@ -44,7 +56,9 @@
 (function () {
   'use strict';
   var TYPES = { aizawa: 0, thomas: 1, halvorsen: 2, dadras: 3, chen: 4, fourwing: 5, sprott: 6, lorenz: 7, rossler: 8,
-    threescroll: 9, lorenz84: 10, shimizu: 11, burkeshaw: 12, dequanli: 13, hadley: 14, lorenzmod2: 15, halvorsen14: 16 };
+    threescroll: 9, lorenz84: 10, shimizu: 11, burkeshaw: 12, dequanli: 13, hadley: 14, lorenzmod2: 15, halvorsen14: 16,
+    // invented: random Thomas-like flows (cyclic sines, damping; they can't fly apart), picked by eye from 120
+    rose: 17, cup: 18, manta: 19, smoke: 20, flame: 21 };
   // c, s: the centre and scale that bring each attractor into roughly a unit ball. dt: the step while a fresh simulation
   // settles onto its shape (the largest that stays stable and true); pace: the step that moves its points at the
   // round-5 pages' median speed with two steps a frame. Measured offline with the shader's own integrator and seeding.
@@ -65,7 +79,12 @@
     { c: [-2.01, 0.42, 102.41], s: 0.0045, dt: 0.0016, pace: 0.000154 },   // dequan li
     { c: [0.97, -0.1, 0.09], s: 0.474, dt: 0.016, pace: 0.00386 },         // hadley
     { c: [0.27, 0.42, -0.21], s: 0.0639, dt: 0.006, pace: 0.00143 },       // lorenz mod 2
-    { c: [-3.12, -3.11, -3.12], s: 0.0665, dt: 0.008, pace: 0.00252 }      // halvorsen at a = 1.4
+    { c: [-3.12, -3.11, -3.12], s: 0.0665, dt: 0.008, pace: 0.00252 },     // halvorsen at a = 1.4
+    { c: [0.207, -0.002, -0.938], s: 0.2064, dt: 0.05, pace: 0.0212 },     // rose
+    { c: [-0.258, -0.706, -0.918], s: 0.1723, dt: 0.05, pace: 0.034 },     // cup
+    { c: [1.237, 0.099, 1.202], s: 0.2852, dt: 0.05, pace: 0.0197 },       // manta
+    { c: [-0.172, 0.626, 0.648], s: 0.1705, dt: 0.05, pace: 0.0489 },      // smoke
+    { c: [-0.104, 0.007, -0.84], s: 0.1088, dt: 0.05, pace: 0.0558 }       // flame
   ];
   var SEED_BOX = 0.4, SETTLE = 1440;   // seeds fill ±0.4 of the unit ball around the centre; steps before a shape shows
   var S = 1024, N = S * S;
@@ -112,7 +131,12 @@
       '  if (t == 13) return vec3(40.0 * (y - x) + 0.16 * x * z, 55.0 * x + 20.0 * y - x * z, 1.833 * z + x * y - 0.65 * x * x);',
       '  if (t == 14) return vec3(-y * y - z * z - 0.2 * x + 1.6, x * y - 4.0 * x * z - y + 1.0, 4.0 * x * y + x * z - z);',
       '  if (t == 15) return vec3(-0.9 * x + y * y - z * z + 8.91, x * (y - 5.0 * z) + 1.0, -z + x * (5.0 * y + z));',
-      '  return vec3(-1.4 * x - 4.0 * y - 4.0 * z - y * y, -1.4 * y - 4.0 * z - 4.0 * x - z * z, -1.4 * z - 4.0 * x - 4.0 * y - x * x);',
+      '  if (t == 16) return vec3(-1.4 * x - 4.0 * y - 4.0 * z - y * y, -1.4 * y - 4.0 * z - 4.0 * x - z * z, -1.4 * z - 4.0 * x - 4.0 * y - x * x);',
+      '  if (t == 17) return vec3(sin(1.0866 * y + 5.7705) + 0.3721 * sin(2.0789 * z + 5.6013) - 0.1525 * x + 0.2903 * y, sin(1.504 * z + 0.2199) + 0.5722 * sin(1.1666 * x + 4.308) - 0.1525 * y - 0.2903 * x, sin(1.2747 * x + 6.2324) + 0.0453 * sin(1.1693 * y + 1.9565) - 0.1525 * z);',
+      '  if (t == 18) return vec3(sin(1.4372 * y + 3.0318) + 0.4499 * sin(2.078 * z + 3.1664) - 0.1468 * x, sin(0.9707 * z + 0.2924) + 0.1352 * sin(2.4951 * x + 1.8352) - 0.1468 * y, sin(0.8249 * x + 4.9592) + 0.0699 * sin(0.788 * y + 2.7822) - 0.1468 * z);',
+      '  if (t == 19) return vec3(sin(0.712 * y + 2.2675) + 0.3727 * sin(1.7045 * z + 3.0001) - 0.1629 * x, sin(1.3716 * z + 6.0158) + 0.6745 * sin(0.7805 * x + 4.5612) - 0.1629 * y, sin(1.2769 * x + 6.184) + 0.1139 * sin(2.2335 * y + 5.0699) - 0.1629 * z);',
+      '  if (t == 20) return vec3(1.3 * sin(1.3083 * y + 1.9482) * cos(0.8236 * z + 1.4405) - 0.1719 * x, 1.3 * sin(0.9911 * z + 1.0758) * cos(1.0914 * x + 5.0159) - 0.1719 * y, 1.3 * sin(1.0317 * x + 1.6178) * cos(1.0415 * y + 2.5164) - 0.1719 * z);',
+      '  return vec3(sin(1.4614 * y + 0.4821) + 0.1617 * sin(0.9959 * z + 0.0008) - 0.126 * x, sin(1.301 * z + 5.9975) + 0.5471 * sin(2.0034 * x + 2.7808) - 0.126 * y, sin(0.7737 * x + 3.9655) + 0.2707 * sin(2.4724 * y + 6.2504) - 0.126 * z);',
       '}'].join('\n');
     // a fresh point: anywhere in a box around the shape's centre, so the points start spread over the shape, not in one clump
     var SEED_AT = 'uniform vec3 uSeedC; uniform float uSeedR; vec3 seedAt(vec2 fc, uint s) { return uSeedC + (rnd3(uint(fc.x), uint(fc.y), s) - 0.5) * 2.0 * uSeedR; }';
@@ -129,9 +153,10 @@
     var DRAW = prog(H + HASH + [
       'uniform sampler2D uA, uB, uV; uniform int uTA, uTB; uniform vec4 uNA, uNB; uniform float uMorph, uFlat, uSize, uAspect, uVideoAspect, uFlatW;',
       'uniform mat4 uMVP; uniform vec2 uCenter; uniform int uInk; uniform vec3 uC1, uC2; uniform float uAlpha, uOverlap; uniform int uBlend;',
+      'uniform mat4 uView; uniform int uProj; uniform float uFishK, uFishMax, uAperture, uFocus, uMaxGrow, uHaze;',
       'uniform float uForm, uSlot, uLogoH, uLogoA, uLogoF, uRim, uShare, uStay, uTime; uniform vec2 uLogoC; uniform vec4 uHole; uniform float uHoleAmt;',
       'uniform sampler2D uL0, uL1; uniform vec2 uN0, uN1;',
-      'out vec4 vC;',
+      'out vec4 vC; out float vSz;',
       'float h(float n) { return fract(sin(n * 12.9898) * 43758.5453); }',
       // a place in a logo: L lists its outline pixels (the first n.x) and then every pixel inside it (n.y), as 0..1 coordinates
       'vec2 pick(sampler2D L, vec2 n, float r, float rim, ivec2 c, uint salt) {',
@@ -145,6 +170,7 @@
       '  vec3 a = (texelFetch(uA, c, 0).xyz - uNA.xyz) * uNA.w;',
       '  vec3 b = (texelFetch(uB, c, 0).xyz - uNB.xyz) * uNB.w;',
       '  vec3 shape = mix(a, b, uMorph) + (h(float(id)) - 0.5) * 0.004;',
+      '  shape += (rnd3(uint(c.x), uint(c.y), 51u) - 0.5) * uHaze * sin(3.14159 * uMorph);',   // a looser cloud mid-morph
       '  vec2 uv = (vec2(c) + 0.5) / ' + S + '.0;',
       // the flat picture: a 16:9 plane facing the viewer, in clip space directly
       '  vec2 plane = (uv - 0.5) * vec2(uFlatW, uFlatW / uVideoAspect * uAspect) + uCenter;',
@@ -152,6 +178,19 @@
       '  float f = smoothstep(0.0, 1.0, clamp((uFlat * 1.8 - delay) / 0.9, 0.0, 1.0));',
       '  vec4 cs = uMVP * vec4(shape, 1.0); cs.xy += uCenter * cs.w;',
       '  vec4 pos = cs / cs.w;',
+      '  vec4 vs = uView * vec4(shape, 1.0);',
+      '  float dcam = -vs.z;',
+      '  if (uProj == 0) { if (cs.w < 0.02) pos = vec4(9.0, 9.0, 0.0, 1.0); }',   // behind or at the lens: not drawn
+      '  else {',
+      // a fisheye: the angle from the lens axis sets the distance from the centre (equidistant, stereographic, equisolid)
+      '    float rr = length(vs.xy), th = atan(rr, -vs.z);',
+      '    float r = uProj == 1 ? th : (uProj == 2 ? 2.0 * tan(min(th, 3.0) * 0.5) : 2.0 * sin(th * 0.5));',
+      '    vec2 q = (rr > 1e-7 ? vs.xy / rr : vec2(0.0)) * r * uFishK;',
+      '    pos = th < uFishMax ? vec4(q.x / uAspect + uCenter.x, q.y + uCenter.y, 0.0, 1.0) : vec4(9.0, 9.0, 0.0, 1.0);',
+      '    dcam = length(vs.xyz);',
+      '  }',
+      // depth of field: off the focus, points grow into soft discs and fewer of them show, so the light stays even
+      '  float grow = uAperture > 0.0 ? min(1.0 + abs(dcam - uFocus) * uAperture, uMaxGrow) : 1.0;',
       // Fading is done by showing fewer points, not dimmer ones: a dim point's share rounds away unevenly in an
       // 8-bit framebuffer (faint grey turns blue). `keep` is the chance a point shows; `logoA` scales the outline.
       '  float g = 0.0, logoA = 1.0, keep = 1.0;',
@@ -174,7 +213,7 @@
       '  } else if (uForm > 0.0005) keep = mix(1.0, uStay, smoothstep(0.0, 1.0, uForm));',
       '  vec4 cp = vec4(plane, 0.0, 1.0);',
       '  gl_Position = mix(pos, cp, f);',
-      '  gl_PointSize = uSize * (1.0 + f * 0.4);',
+      '  gl_PointSize = uSize * (1.0 + f * 0.4) * mix(grow, 1.0, max(f, g)); vSz = gl_PointSize;',
       '  vec3 vid = texture(uV, uv).rgb;',
       '  vec3 col;',
       '  if (uInk == 0) col = vid;',
@@ -191,11 +230,11 @@
       '  float aF = uBlend == 1 ? 1.15 / max(uOverlap, 1.0) : 1.0;',
       '  float hd = length((gl_Position.xy / gl_Position.w - uHole.xy) / uHole.zw);',
       '  keep *= mix(mix(uHoleAmt, 1.0, smoothstep(0.75, 1.25, hd)), 1.0, max(f, g));',
-      '  float shown = step(rnd3(uint(c.x), uint(c.y), 23u).x, keep);',
+      '  float shown = step(rnd3(uint(c.x), uint(c.y), 23u).x, keep * mix(1.0 / (grow * grow), 1.0, max(f, g)));',
       '  col = mix(col, uC1, rim * g * 0.6);',
       '  float aS = uAlpha * logoA * shown;',
       '  vC = vec4(mix(col, vidF, f), mix(aS, aF, f));',
-      '}'].join('\n'), H + 'in vec4 vC; uniform int uBlend; out vec4 o; void main(){ if (uBlend == 0) o = vec4(mix(vec3(1.0), vC.rgb, vC.a), 1.0); else o = vC; }');
+      '}'].join('\n'), H + 'in vec4 vC; in float vSz; uniform int uBlend; out vec4 o; void main(){ float a = vC.a * (vSz > 2.5 ? smoothstep(0.5, 0.3, length(gl_PointCoord - 0.5)) : 1.0); if (uBlend == 0) o = vec4(mix(vec3(1.0), vC.rgb, a), 1.0); else o = vec4(vC.rgb, a); }');
 
     var tri = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, tri); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     var vaoTri = gl.createVertexArray(); gl.bindVertexArray(vaoTri); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
@@ -313,7 +352,12 @@
       if (rhythm === 'varied') s = [{ to: 0, dur: lu(2.5, 16) }, { to: 1, dur: lu(1, 11), ease: 1.2 + Math.random() * 2.3 }];
       else if (rhythm === 'restless') s = [{ to: 0, dur: lu(0.9, 3.5) }, { to: 1, dur: lu(0.9, 3.2), ease: 2 }];
       else if (rhythm === 'slow') s = [{ to: 0, dur: lu(14, 26) }, { to: 1, dur: lu(9, 16), ease: 2 }];
-      else if (rhythm === 'custom') s = [{ to: 0, dur: lu(o.holds[0], o.holds[1]) }, { to: 1, dur: lu(o.morphs[0], o.morphs[1]), ease: 1.8 }];
+      else if (rhythm === 'custom') {
+        var md = lu(o.morphs[0], o.morphs[1]), lg = o.linger || 0, sp = o.lingerSpan || 0.15;
+        s = [{ to: 0, dur: lu(o.holds[0], o.holds[1]) }];
+        if (lg > 0) s.push({ to: 0.5 - sp, dur: md * (1 - lg) / 2, ease: 1.6 }, { to: 0.5 + sp, dur: md * lg }, { to: 1, dur: md * (1 - lg) / 2, ease: 1.6 });
+        else s.push({ to: 1, dur: md, ease: 1.8 });
+      }
       else if (rhythm === 'sudden') {
         // now and then a second snap right after the first
         var again = lastHold > 3 && Math.random() < 0.3;
@@ -368,16 +412,18 @@
       }
       sinceSwap += dt;
       flat += (flatTarget - flat) * (flatTarget ? 0.035 : 0.03);
-      form += (formTarget - form) * Math.min(1, dt * (formTarget ? 2.6 : 3.4));
-      slot += (slotTarget - slot) * Math.min(1, dt * 3.2);
+      form += (formTarget - form) * Math.min(1, dt * (formTarget ? (o.formRate || 2.6) : (o.releaseRate || 3.4)));
+      slot += (slotTarget - slot) * Math.min(1, dt * (o.slotRate || 3.2));
       gl.bindVertexArray(vaoTri);
       // a fresh B settles fast (twelve steps a frame) so even a quick next morph lands on a formed shape
       if (!reduced) { advance(simA, dt); advance(simB, dt); }
       if (!drag && !reduced) yaw += dt * (o.spin != null ? o.spin : 0.09) * (1 - flat) * (o.morphWhileLogo ? 1 : 1 - form * 0.8);
       var aspect = W / Hh;
       var size = (typeof o.size === 'function' ? o.size() : o.size) || 1;
-      var view = mul(trans(0, 0, -3.1 / size), mul(rotX(pitch), rotY(yaw)));
-      var mvp = mul(persp(0.72, aspect, 0.1, 50), view);
+      var L = o.lens || {};
+      var camD = (L.dist != null ? L.dist : 3.1) / size;
+      var view = mul(trans(0, 0, -camD), mul(rotX(pitch), rotY(yaw)));
+      var mvp = mul(persp(L.fov || 0.72, aspect, L.near || 0.1, 60), view);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, Hh);
       gl.clearColor(bg[0], bg[1], bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.enable(gl.BLEND);
@@ -403,6 +449,14 @@
       gl.uniform1f(DRAW.u.uAspect, aspect); gl.uniform1f(DRAW.u.uVideoAspect, 16 / 9);
       gl.uniform1f(DRAW.u.uFlatW, o.flatWidth || 1.05);
       gl.uniformMatrix4fv(DRAW.u.uMVP, false, mvp);
+      gl.uniformMatrix4fv(DRAW.u.uView, false, view);
+      gl.uniform1i(DRAW.u.uProj, L.proj || 0);
+      if (L.proj) {
+        var fh = (L.diag || 90) * Math.PI / 180, fr = L.proj === 1 ? fh : L.proj === 2 ? 2 * Math.tan(fh / 2) : 2 * Math.sin(fh / 2);
+        gl.uniform1f(DRAW.u.uFishK, Math.sqrt(aspect * aspect + 1) / fr); gl.uniform1f(DRAW.u.uFishMax, Math.min(fh * 1.3, 3.0));
+      }
+      gl.uniform1f(DRAW.u.uAperture, L.aperture || 0); gl.uniform1f(DRAW.u.uMaxGrow, L.maxGrow || 10); gl.uniform1f(DRAW.u.uHaze, o.haze || 0);
+      gl.uniform1f(DRAW.u.uFocus, camD + (L.focusDrift || 0) * Math.sin(time * (L.focusRate || 0.05)));
       var ctr = (typeof o.center === 'function' ? o.center() : o.center) || [0, 0];
       gl.uniform2f(DRAW.u.uCenter, ctr[0], ctr[1]);
       var lc = (typeof o.logoCenter === 'function' ? o.logoCenter() : o.logoCenter) || ctr;
