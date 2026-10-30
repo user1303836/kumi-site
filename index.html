@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kumi · an AI agent in your DAW</title>
 <meta name="description" content="A free, open-source AI agent that works inside Ableton Live, REAPER and Renoise. Ask for the sound in your head, a mix like a track you love, or the patch from a tutorial: Kumi builds it in your project and listens until it’s right.">
+<meta name="robots" content="noindex">
 <meta name="theme-color" content="#05060d">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -406,5 +407,6 @@ renderer.setAnimationLoop(() => {
   composer.render(dt);
 });
 </script>
+<nav id="pv" aria-label="Preview"><b>preview ·</b><span><b>background</b><a data-k="page" data-v="index.html" href="./">now</a><a data-k="page" data-v="12w.html" href="12w.html">attractor, night</a><a data-k="page" data-v="12x.html" href="12x.html">attractor, ambient</a></span><i></i><span><b>pace</b><a data-k="pace" data-v="slow" href="?pace=slow">slow</a><a data-k="pace" data-v="slower" href="?pace=slower">slower</a><a data-k="pace" data-v="slowest" href="?pace=slowest">slowest</a></span></nav><style>#pv{position:fixed;z-index:50;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;width:max-content;max-width:min(800px,calc(100vw - 24px));padding:6px 12px;background:rgba(5,6,13,.82);border:1px solid rgba(255,255,255,.18);font:500 11px/1.4 ui-monospace,Menlo,monospace;color:#8a8f99;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}#pv b{font-weight:500;color:#8a8f99}#pv span{display:flex;gap:0 10px;white-space:nowrap}#pv i{width:1px;align-self:stretch;background:rgba(255,255,255,.18)}#pv a{color:#c9cdd4;text-decoration:none}#pv a.on{color:#9fe3ff;text-decoration:underline}</style><script>(function(){var q=new URLSearchParams(location.search),d={"pace": "slower"},here=(location.pathname.split("/").pop()||"index").replace(/\.html$/,"");document.querySelectorAll("#pv a").forEach(function(a){var k=a.dataset.k.split(","),v=a.dataset.v.split(",");if(k[0]==="page"){if(v[0].replace(/\.html$/,"")===here)a.className="on";a.addEventListener("click",function(e){e.preventDefault();location.href=a.getAttribute("href")+location.search;});return;}if(k.every(function(x,i){return(q.get(x)||d[x])===v[i];}))a.className="on";a.addEventListener("click",function(e){e.preventDefault();k.forEach(function(x,i){q.set(x,v[i]);});location.search=q.toString();});});})();</script>
 </body>
 </html>

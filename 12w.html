@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kumi · an AI agent in your DAW</title>
+<meta name="description" content="A free, open-source AI agent that works inside Ableton Live, REAPER and Renoise. Ask for the sound in your head, a mix like a track you love, or the patch from a tutorial: Kumi builds it in your project and listens until it’s right.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#05060d">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Kumi · an AI agent in your DAW">
+<meta property="og:description" content="A free, open-source AI agent that works inside Ableton Live, REAPER and Renoise. Ask for the sound in your head, a mix like a track you love, or the patch from a tutorial: Kumi builds it in your project and listens until it’s right.">
+<meta property="og:image" content="https://kumi-agent.com/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://kumi-agent.com/">
+<meta property="og:url" content="https://kumi-agent.com/">
+<link rel="stylesheet" href="assets/shell.css">
+<style>html, body { margin: 0; height: 100%; background: #040507; overflow: hidden; } #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }  .ks-demos, .ks-now { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A strange attractor made of a million points"></canvas>
+<script src="assets/kumi.js"></script>
+<script src="assets/shell.js"></script>
+<script>(function () { var mount = KumiShell.mount; KumiShell.mount = function (o) { return mount.call(KumiShell, Object.assign({}, o, { layout: 'bottom', font: 'roboto-mono', mono: 'roboto-mono', daws: 'marks', dawsAt: 'kicker', dawColor: 'dim', dawSize: 18, line: 1, demoStyle: 'squares', headStyle: 'one', head: 30, sub: false, headSize: 80 })); }; })();</script>
+<script src="assets/r6-attractor.js"></script>
+<script>
+(function () {
+  var K = KUMI;
+  var wide = function () { return innerWidth > 820; };
+  var flat = 0;
+  var home = [0.08, 0.36], stage = [0, 0.02];
+  // Fifteen shapes in a shuffled order, and the pace: how fast the points flow, the turn (radians a second), how long
+  // each shape holds and how long a morph takes (seconds). ?pace= slow, slower or slowest; ?shapes=a,b tries only those.
+  var SHAPES = ['aizawa', 'thomas', 'halvorsen', 'dadras', 'chen', 'fourwing', 'lorenz', 'rossler', 'threescroll', 'lorenz84',
+    'shimizu', 'burkeshaw', 'hadley', 'lorenzmod2', 'halvorsen14'];
+  var PACES = {
+    slow: { flow: 0.5, spin: 0.045, holds: [8, 16], morphs: [7, 12] },
+    slower: { flow: 0.3, spin: 0.03, holds: [10, 20], morphs: [10, 16] },
+    slowest: { flow: 0.18, spin: 0.018, holds: [12, 24], morphs: [14, 22] }
+  };
+  var PACE_DEFAULT = 'slower';
+  var q = new URLSearchParams(location.search);
+  var pace = PACES[q.get('pace')] || PACES[PACE_DEFAULT];
+  var only = (q.get('shapes') || '').split(',').filter(function (n) { return SHAPES.indexOf(n) >= 0; });
+  var idle = null;   // its ink is depth, so it never took colour from a video
+  var a = KumiAttractor(document.getElementById('c'), Object.assign({"bg": [0.016, 0.018, 0.026], "blend": "add", "ink": "depth", "color": [0.62, 0.8, 1.0], "color2": [0.12, 0.16, 0.4], "alpha": 0.16, "sequence": ["thomas", "aizawa", "fourwing", "halvorsen"], "size": 0.82, "pointSize": 1.0, "rhythm": "sudden", "logoSize": 1.05, "logoAlpha": 0.42, "rimPx": 2, "logoShare": 0.6, "logoRim": 0.24, "logoStay": 0.85, "morphWhileLogo": true, "drag": false}, {
+    idleVideo: idle, sequence: only.length ? only : SHAPES, shuffle: true, rhythm: 'custom', holds: pace.holds, morphs: pace.morphs,
+    flow: pace.flow, spin: pace.spin, size: function () { return wide() ? 0.82 : 0.6; },   // smaller on a phone, where the shapes ran off the sides
+    center: function () { var h = wide() ? home : [0, 0.28]; return [h[0] + (stage[0] - h[0]) * flat, h[1] + (stage[1] - h[1]) * flat]; }
+  }));
+  window.__attractor = a;
+  var target = 0;
+  (function ease() { flat += (target - flat) * 0.06; requestAnimationFrame(ease); })();
+  KumiShell.mount(Object.assign({"layout": "right", "theme": "dark", "font": "inter-tight", "mono": "geist-mono", "colors": {"accent": "#8fb8ff", "panel": "rgba(8,10,16,0.7)"}, "daws": "marks", "dawSize": 20, "line": 1, "demoStyle": "bright"}, {
+    stage: 'self',
+    onDaw: function (i) { if (a) a.form(i); },
+    onDemo: function (i, d, video) { target = 1; if (a) a.flatten(video); },
+    onRelease: function () { target = 0; if (a) a.release(); }
+  }));
+})();
+</script>
+<nav id="pv" aria-label="Preview"><b>preview ·</b><span><b>background</b><a data-k="page" data-v="index.html" href="./">now</a><a data-k="page" data-v="12w.html" href="12w.html">attractor, night</a><a data-k="page" data-v="12x.html" href="12x.html">attractor, ambient</a></span><i></i><span><b>pace</b><a data-k="pace" data-v="slow" href="?pace=slow">slow</a><a data-k="pace" data-v="slower" href="?pace=slower">slower</a><a data-k="pace" data-v="slowest" href="?pace=slowest">slowest</a></span></nav><style>#pv{position:fixed;z-index:50;left:50%;top:8px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;width:max-content;max-width:min(800px,calc(100vw - 24px));padding:6px 12px;background:rgba(5,6,13,.82);border:1px solid rgba(255,255,255,.18);font:500 11px/1.4 ui-monospace,Menlo,monospace;color:#8a8f99;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}#pv b{font-weight:500;color:#8a8f99}#pv span{display:flex;gap:0 10px;white-space:nowrap}#pv i{width:1px;align-self:stretch;background:rgba(255,255,255,.18)}#pv a{color:#c9cdd4;text-decoration:none}#pv a.on{color:#9fe3ff;text-decoration:underline}</style><script>(function(){var q=new URLSearchParams(location.search),d={"pace": "slower"},here=(location.pathname.split("/").pop()||"index").replace(/\.html$/,"");document.querySelectorAll("#pv a").forEach(function(a){var k=a.dataset.k.split(","),v=a.dataset.v.split(",");if(k[0]==="page"){if(v[0].replace(/\.html$/,"")===here)a.className="on";a.addEventListener("click",function(e){e.preventDefault();location.href=a.getAttribute("href")+location.search;});return;}if(k.every(function(x,i){return(q.get(x)||d[x])===v[i];}))a.className="on";a.addEventListener("click",function(e){e.preventDefault();k.forEach(function(x,i){q.set(x,v[i]);});location.search=q.toString();});});})();</script>
+</body>
+</html>
